@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from backend.agent_pdf import data_processor  # agente que usa o modelo Gemini + File
+from agent_pdf import data_processor  # agente que usa o modelo Gemini + File
 from agno.media import File as AgnoFile
 
 app = FastAPI(title="API de Processamento de PDFs", version="2.0.0")
