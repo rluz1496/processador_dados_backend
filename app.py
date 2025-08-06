@@ -13,7 +13,7 @@ app = FastAPI(title="API de Processamento de PDFs", version="2.0.0")
 # CORS config
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://processador-dados-frontend.vercel.app/"],
+    allow_origins=["https://processador-dados-frontend.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
