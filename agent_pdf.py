@@ -47,7 +47,7 @@ class DocumentJSON(BaseModel):
 
 data_processor = Agent(
     name="extractor_data",
-    model=Gemini(id="gemini-2.5-flash", temperature=0),
+    model=Gemini(id="gemini-2.5-pro", temperature=0),
     response_model=DocumentJSON,
     use_json_mode=True,
     debug_mode=False,
