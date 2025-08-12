@@ -10,3 +10,5 @@ pydantic
 agno
 packaging
 wheel
+PyPDF2
+
