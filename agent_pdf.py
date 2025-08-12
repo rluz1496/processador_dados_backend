@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field
 from typing import List
 from agno.utils.pprint import pprint_run_response
 
+# NOVO: detecção de texto no PDF
+from PyPDF2 import PdfReader
+
 load_dotenv()
 
     #Unificar os emails -- OK
@@ -53,7 +56,7 @@ class DocumentJSON(BaseModel):
 
 data_processor = Agent(
     name="extractor_data",
-    model=OpenAIChat(id="gpt-5"),
+    model=OpenAIChat(id="gpt-5"),  # valor padrão; vamos trocar dinamicamente abaixo
     response_model=DocumentJSON,
     use_json_mode=True,
     debug_mode=False,
@@ -117,10 +120,35 @@ data_processor = Agent(
     ]
 )
 
+# ------------------------------
+# NOVO: detector de PDF com texto
+# ------------------------------
+def _pdf_tem_texto(caminho_pdf: str, limite_min_caracteres: int = 20) -> bool:
+    try:
+        reader = PdfReader(caminho_pdf)
+        total = []
+        for p in reader.pages:
+            txt = p.extract_text() or ""
+            total.append(txt)
+        return len("".join(total).strip()) > limite_min_caracteres
+    except Exception:
+        # Se não conseguir ler, trate como imagem (scan)
+        return False
+
 
 def processar_arquivo_pdf(filepath: str):
     print(f"Iniciando processamento do arquivo: {filepath}")
     start_time = time.time()
+
+    # >>> NOVO: seleção dinâmica de modelo
+    if _pdf_tem_texto(filepath):
+        model_id = "gpt-5-mini"      # PDF com texto → OpenAI (mais leve)
+        data_processor.model = OpenAIChat(id=model_id)
+    else:
+        model_id = "gemini-2.5-pro"  # PDF imagem/scan → Gemini (OCR robusto)
+        data_processor.model = Gemini(id=model_id)
+    print(f"Modelo selecionado: {model_id}")
+    # <<< NOVO
 
     file = AgnoFile(filepath=filepath)
 
