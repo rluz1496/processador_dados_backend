@@ -29,11 +29,16 @@ class UnidadeInfo(BaseModel):
     Bloco: str
     Tipo: str
     Perfil: str
-    Nome: str
-    CPF_CNPJ: str
-    Celular: str
-    Telefone_fixo: str
-    Email: str
+    Proprietario_Nome: str
+    Proprietario_CPF_CNPJ: str
+    Proprietario_Celular: str
+    Proprietario_Telefone_fixo: str
+    Proprietario_Email: str
+    Responsavel_Nome: str
+    Responsavel_CPF_CNPJ: str
+    Responsavel_Celular: str
+    Responsavel_Telefone_fixo: str
+    Responsavel_Email: str
 
 
 class DocumentJSON(BaseModel):
