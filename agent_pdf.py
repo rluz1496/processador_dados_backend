@@ -48,46 +48,66 @@ class DocumentJSON(BaseModel):
 
 data_processor = Agent(
     name="extractor_data",
-    model=Gemini(id="gemini-2.5-pro", temperature=0),
+    model=OpenAIChat(id="gpt-5-mini"),
     response_model=DocumentJSON,
     use_json_mode=True,
     debug_mode=False,
     instructions=[
         """
-        Leia TODO o documento PDF e extraia informações de todas as unidades habitacionais encontradas, incluindo apartamentos, garagens, salas ou qualquer outro tipo de unidade mencionado. Para cada unidade, capture exatamente os seguintes campos:
+        Você é um assistente especializado em extração de informações estruturadas a partir de documentos PDF.
 
-        Unidade: O número da unidade, extraído de forma limpa. Se a unidade for descrita com o bloco incluído (ex.: "Bloco 01 Unidade 01-01" ou "01-02"), extraia apenas o número da unidade (ex.: "01-01", "01-02"). Se não houver unidade explícita, deixe em branco.
-        Bloco: O número ou nome do bloco, se presente. Se o bloco estiver embutido no número da unidade, extraia-o separadamente (ex.: para "Bloco 01 Unidade 01-01", o Bloco é "01"). Se não houver bloco, deixe em branco.
-        Tipo: O tipo da unidade (ex.: "Apto", "Garagem", "Sala", etc.). Se o tipo não estiver especificado no documento, padronize como "Apto".
-        Perfil: O perfil da pessoa associada à unidade. Pode ser "Proprietário", "Inquilino" ou "Dependente". Sempre inclua o proprietário. Se o inquilino estiver destacado no documento, inclua-o como uma entrada separada para a mesma unidade, com o mesmo número de unidade e bloco, mas com o perfil "Inquilino" e seus respectivos dados. Dependentes (pessoas que moram na unidade, mas não são proprietários nem inquilinos) devem ser incluídos apenas se explicitamente mencionados, com o perfil "Dependente". Se o perfil não estiver destacado, considere a pessoa como "Proprietário".
-        Nome: O nome completo da pessoa (proprietário, inquilino ou dependente). Se não houver, deixe em branco.
-        CPF_CNPJ: O CPF ou CNPJ da pessoa, formatado como aparece no documento. Se não houver, deixe em branco.
-        Telefone: O número de telefone, identificado como "Fixo" ou "Móvel". Formate o número com o DDD no padrão "(XX) XXXX-XXXX" para fixo ou "(XX) XXXXX-XXXX" para móvel. Se não for possível determinar o tipo, considere "Móvel". Se não houver telefone, deixe em branco.
-        WhatsApp: O número de WhatsApp, formatado com o DDD no padrão "(XX) XXXXX-XXXX". Se o documento não especificar um número de WhatsApp, mas houver um número de telefone móvel, assuma que o WhatsApp é o mesmo número do telefone móvel. Se não houver WhatsApp, deixe em branco.
-        Email: O endereço de e-mail da pessoa. Se não houver, deixe em branco.
+        TAREFA:
+        - Leia o documento PDF completo.
+        - Extraia todas as unidades habitacionais encontradas, incluindo apartamentos, garagens, salas ou qualquer outro tipo de unidade mencionada.
+        - Para cada unidade, extraia exatamente os campos definidos no modelo abaixo.
+        - Sempre retorne a saída como um JSON válido, sem comentários, texto extra ou explicações.
 
-        Instruções adicionais:
+        CAMPOS A EXTRAIR:
+        - Unidade: Número da unidade. Se vier acompanhado do bloco (ex.: "Bloco 01 Unidade 01-01" ou "01-02"), extraia apenas o número da unidade ("01-01", "01-02"). Se não houver, deixe em branco.
+        - Bloco: Número ou nome do bloco, se presente. Se estiver embutido no número da unidade, extraia separadamente. Se não houver, deixe em branco.
+        - Tipo: Tipo da unidade (ex.: "Apto", "Garagem", "Sala"). Se não especificado, padronize como "Apto".
+        - Perfil: Sempre "Proprietário".
+        - Proprietario_Nome
+        - Proprietario_CPF_CNPJ
+        - Proprietario_Celular
+        - Proprietario_Telefone_fixo
+        - Proprietario_Email
+        - Responsavel_Nome: Nome do responsável, se houver, e for diferente do proprietário (nome e documento diferentes). Caso contrário, deixe em branco.
+        - Responsavel_CPF_CNPJ
+        - Responsavel_Celular
+        - Responsavel_Telefone_fixo
+        - Responsavel_Email
 
-        Processe todas as unidades mencionadas no documento, mesmo que sejam de tipos diferentes (ex.: apartamentos, garagens, salas) e pertençam ao mesmo proprietário.
-        Garanta que cada unidade seja representada apenas uma vez por perfil (ex.: uma unidade com proprietário e inquilino terá duas entradas, uma com perfil "Proprietário" e outra com perfil "Inquilino", mas com o mesmo número de unidade e bloco).
-        Ignore informações irrelevantes, como dados de outras entidades (ex.: síndico, administradora) que não estejam vinculadas a uma unidade específica.
-        Se um campo não estiver presente no documento, deixe-o em branco no JSON.
-        Ao concluir, conte o total de unidades processadas (considerando cada unidade por perfil) e inclua esse total no campo "total_unidades" no JSON.
+        REGRAS:
+        1. Se a unidade tiver apenas proprietário, todos os campos de responsável ficam em branco.
+        2. Se houver proprietário e responsável, ambos devem estar na mesma entrada (mesmo objeto no JSON).
+        3. Dependentes não devem ser incluídos.
+        4. Não aplicar nenhuma formatação adicional aos valores extraídos — manter exatamente como no documento.
+        5. Ignorar informações irrelevantes (ex.: síndico, administradora) que não estejam associadas a uma unidade.
+        6. Contar cada unidade apenas uma vez no campo "total_unidades".
 
-        Formato de saída:
-        Retorne somente um JSON válido, sem comentários ou texto extra, no seguinte formato:
-
+        FORMATO DE SAÍDA:
+        Retorne somente um JSON válido com a seguinte estrutura:
         {
-          "unidades": [ ... ],
-          "total_unidades": 0
+        "unidades": [
+            {
+            "Unidade": "",
+            "Bloco": "",
+            "Tipo": "",
+            "Perfil": "",
+            "Proprietario_Nome": "",
+            "Proprietario_CPF_CNPJ": "",
+            "Proprietario_Celular": "",
+            "Proprietario_Telefone_fixo": "",
+            "Proprietario_Email": "",
+            "Responsavel_Nome": "",
+            "Responsavel_CPF_CNPJ": "",
+            "Responsavel_Celular": "",
+            "Responsavel_Telefone_fixo": "",
+            "Responsavel_Email": ""
+            }
+        ]
         }
-
-        Garantias:
-        - Todas as unidades existentes no PDF devem ser incluídas.
-        - Formate os números de telefone e WhatsApp corretamente.
-        - Separe unidade de bloco.
-        - Identifique tipo e perfil corretamente.
-        - Não repita entradas.
         """
     ]
 )
