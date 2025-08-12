@@ -1,6 +1,7 @@
 import time
 from agno.agent import Agent
 from agno.models.google import Gemini
+from agno.models.openai import OpenAIChat
 from agno.media import File as AgnoFile
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -47,7 +48,7 @@ class DocumentJSON(BaseModel):
 
 data_processor = Agent(
     name="extractor_data",
-    model=Gemini(id="gemini-2.5-pro", temperature=0),
+    model=OpenAIChat(id="gpt-4", temperature=0),
     response_model=DocumentJSON,
     use_json_mode=True,
     debug_mode=False,
