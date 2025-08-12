@@ -53,7 +53,7 @@ class DocumentJSON(BaseModel):
 
 data_processor = Agent(
     name="extractor_data",
-    model=OpenAIChat(id="gpt-5-mini"),
+    model=OpenAIChat(id="gpt-5"),
     response_model=DocumentJSON,
     use_json_mode=True,
     debug_mode=False,
