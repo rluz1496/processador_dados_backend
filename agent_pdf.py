@@ -2,26 +2,14 @@ import time
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.models.openai import OpenAIChat
+from agno.models.openrouter import OpenRouter
 from agno.media import File as AgnoFile
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from agno.utils.pprint import pprint_run_response
 
-# NOVO: detecção de texto no PDF
-from PyPDF2 import PdfReader
-
 load_dotenv()
-
-    #Unificar os emails -- OK
-    #Identificar o fixo e movel - OK
-    #Identificar o perfil se inquilo/proprietario (Somente o primeiro) - OK
-    #Identificar o tipo da unidade - OK
-    #Identificador de CPF condosuite --
-    #Identificador de telefone --condosuite busca dados--
-    #baixar csv para conferencia - OK
-    #https://condosuite.condoconta.com.br/#/signin
-    #Inserir calculo 90/10 visivel
 
 # ------------------------------
 # MODELOS DE RESPOSTA
@@ -43,23 +31,42 @@ class UnidadeInfo(BaseModel):
     Responsavel_Telefone_fixo: str
     Responsavel_Email: str
 
-
 class DocumentJSON(BaseModel):
     unidades: List[UnidadeInfo]
     total_unidades: int
     condominio: str = ""
 
+class UnidadeNormalizada(BaseModel):
+    Unidade: str
+    Bloco: str
+    Tipo: str
+    Perfil: str
+    Proprietario_Nome: str
+    Proprietario_CPF_CNPJ: str
+    Proprietario_Celular: str
+    Proprietario_Telefone_fixo: str
+    Proprietario_Email: str
+    Responsavel_Nome: str
+    Responsavel_CPF_CNPJ: str
+    Responsavel_Celular: str
+    Responsavel_Telefone_fixo: str
+    Responsavel_Email: str
+
+class DocumentoNormalizado(BaseModel):
+    unidades: List[UnidadeNormalizada]
+    total_unidades: int
+    condominio: str = ""
 
 # ------------------------------
-# AGENTE CONFIGURADO
+# AGENTE EXTRATOR
 # ------------------------------
 
 data_processor = Agent(
     name="extractor_data",
-    model=OpenAIChat(id="gpt-5"),  # valor padrão; vamos trocar dinamicamente abaixo
+    model=OpenAIChat(id="gpt-5-mini"),
     response_model=DocumentJSON,
     use_json_mode=True,
-    debug_mode=False,
+    debug_mode=True,
     instructions=[
         """
         Você é um assistente especializado em extração de informações estruturadas a partir de documentos PDF.
@@ -114,51 +121,111 @@ data_processor = Agent(
             "Responsavel_Telefone_fixo": "",
             "Responsavel_Email": ""
             }
-        ]
+        ],
+        "total_unidades": 0
         }
         """
     ]
 )
 
 # ------------------------------
-# NOVO: detector de PDF com texto
+# AGENTE NORMALIZADOR
 # ------------------------------
-def _pdf_tem_texto(caminho_pdf: str, limite_min_caracteres: int = 20) -> bool:
-    try:
-        reader = PdfReader(caminho_pdf)
-        total = []
-        for p in reader.pages:
-            txt = p.extract_text() or ""
-            total.append(txt)
-        return len("".join(total).strip()) > limite_min_caracteres
-    except Exception:
-        # Se não conseguir ler, trate como imagem (scan)
-        return False
 
+data_normalizer = Agent(
+    name="data_normalizer",
+    model=OpenAIChat(id="gpt-5-mini"),
+    response_model=DocumentoNormalizado,
+    use_json_mode=True,
+    debug_mode=True,
+    instructions=[
+        """
+        Você é um especialista em normalização e padronização de dados estruturados.
 
-def processar_arquivo_pdf(filepath: str):
-    print(f"Iniciando processamento do arquivo: {filepath}")
-    start_time = time.time()
+        TAREFA:
+        - Receber um JSON contendo dados extraídos de documentos.
+        - Normalizar e padronizar todos os campos de acordo com as regras abaixo.
+        - Retornar exatamente o mesmo JSON, mantendo a estrutura original, porém com todos os campos normalizados.
 
-    # >>> NOVO: seleção dinâmica de modelo
-    if _pdf_tem_texto(filepath):
-        model_id = "gpt-5-mini"      # PDF com texto → OpenAI (mais leve)
-        data_processor.model = OpenAIChat(id=model_id)
-    else:
-        model_id = "gemini-2.5-pro"  # PDF imagem/scan → Gemini (OCR robusto)
-        data_processor.model = Gemini(id=model_id)
-    print(f"Modelo selecionado: {model_id}")
-    # <<< NOVO
+        REGRAS DE NORMALIZAÇÃO:
 
-    file = AgnoFile(filepath=filepath)
+        1. TELEFONES
+        - Remover todos os caracteres não numéricos.
+        - Celular:
+        - Deve ter 11 dígitos: DDD (2 dígitos) + número (9 dígitos).
+        - Se possuir apenas 10 dígitos e o número for celular, inserir o dígito 9 após o DDD.
+        - Formatar como: (XX) XXXXX-XXXX.
+        - Telefone fixo:
+        - Deve ter 10 dígitos: DDD (2 dígitos) + número (8 dígitos).
+        - Formatar como: (XX) XXXX-XXXX.
+        - Se não for possível determinar o tipo, considerar como celular.
 
-    response = data_processor.run(
-        message="Extraia os dados.",
-        files=[file]
+        2. CPF/CNPJ
+        - Remover todos os caracteres não numéricos.
+        - CPF:
+        - Deve ter 11 dígitos.
+        - Formatar como: XXX.XXX.XXX-XX.
+        - CNPJ:
+        - Deve ter 14 dígitos.
+        - Formatar como: XX.XXX.XXX/XXXX-XX.
+
+        3. EMAIL
+        - Converter para minúsculas.
+        - Remover espaços extras.
+        - Validar se contém "@" e "." (formato básico).
+
+        4. NOMES
+        - Converter para formato título (primeira letra maiúscula de cada palavra).
+        - Remover espaços extras no início e no fim.
+        - Remover caracteres especiais desnecessários.
+
+        5. UNIDADE
+        - Remover espaços extras.
+        - Manter consistência na numeração.
+        - Se o bloco estiver repetido dentro da unidade (ex.: "Unidade: 01-01 Bloco 01"), remover o bloco e manter apenas a unidade (ex.: "01-01").
+
+        6. BLOCO
+        - Remover espaços extras.
+        - Padronizar numeração e formato.
+        - Se não houver bloco informado, deixar em branco.
+
+        7. TIPO
+        - Padronizar para: "Apartamento", "Garagem", "Sala", "Loja", etc.
+        - Converter abreviações: "Apto" → "Apartamento".
+
+        SAÍDA:
+        - Retornar exclusivamente o JSON normalizado, sem explicações adicionais ou texto extra.
+
+        """
+    ]
+)
+
+def processar_pdf(filepath: str) -> str:
+    """Processa PDF com extração e normalização sequencial"""
+    
+    # Etapa 1: Extração
+    response_extracao = data_processor.run(
+        message=f"extraia os dados conforme o prompt: {filepath}",
+        files=[{"filepath": filepath}]
     )
+    
+    dados_extraidos = response_extracao.content
+    print(f"Extração concluída. {dados_extraidos.total_unidades} unidades encontradas.")
+    
+    # Etapa 2: Normalização
+    print("🔧 Iniciando normalização de dados...")
+    response_normalizacao = data_normalizer.run(
+        message=f"Normalize os seguintes dados extraídos: {dados_extraidos.model_dump_json()}"
+    )
+    
+    dados_normalizados = response_normalizacao.content
+    print(f" {dados_normalizados}")
+    
+    return dados_normalizados
 
-    pprint_run_response(response)
-
-    duration = time.time() - start_time
-    print(f"\n✅ Finalizado em {duration:.2f} segundos.")
-    return response
+if __name__ == "__main__":
+    resultado = processar_pdf("unidades_condominio-deville.pdf")
+    print("\n" + "="*50)
+    print("RESULTADO FINAL NORMALIZADO:")
+    print("="*50)
+    print(resultado.model_dump_json(indent=2))
